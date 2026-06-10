@@ -1,0 +1,2 @@
+# VibeCoding
+codex_project
