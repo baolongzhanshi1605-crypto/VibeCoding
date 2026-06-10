@@ -1,0 +1,16 @@
+[
+  {
+    "assignment_id": "demo-1",
+    "course": "大学英语",
+    "title": "Unit 5 作业",
+    "due_at": "2026-06-10T22:00:00+08:00",
+    "submitted": false
+  },
+  {
+    "assignment_id": "demo-2",
+    "course": "高等数学",
+    "title": "习题册第 3 章",
+    "due_at": "2026-06-12T12:00:00+08:00",
+    "submitted": true
+  }
+]

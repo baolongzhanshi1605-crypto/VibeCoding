@@ -1,0 +1,7 @@
+{
+  "timezone": "Asia/Shanghai",
+  "lookahead_hours": 36,
+  "manual_assignments_path": "data/manual_assignments.json",
+  "state_path": "data/state.json",
+  "enable_windows_popup": true
+}
