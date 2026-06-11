@@ -31,7 +31,7 @@ class ReminderState:
         if decision.tier == ReminderTier.URGENT:
             return elapsed >= timedelta(minutes=15)
         if decision.tier == ReminderTier.STRONG:
-            if trigger in {"login", "unlock", "manual"}:
+            if trigger in {"login", "unlock", "wake", "manual"}:
                 return elapsed >= timedelta(minutes=30)
             return elapsed >= timedelta(hours=4)
         if decision.tier in {ReminderTier.PREVIEW, ReminderTier.OVERDUE}:
@@ -64,4 +64,3 @@ class ReminderState:
         self.path.parent.mkdir(parents=True, exist_ok=True)
         with self.path.open("w", encoding="utf-8") as file:
             json.dump(self.data, file, ensure_ascii=False, indent=2)
-

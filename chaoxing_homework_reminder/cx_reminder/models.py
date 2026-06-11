@@ -17,6 +17,7 @@ class Assignment:
 class Trigger(str, Enum):
     LOGIN = "login"
     UNLOCK = "unlock"
+    WAKE = "wake"
     TIMER = "timer"
     MANUAL = "manual"
 
@@ -26,4 +27,3 @@ class ReminderDecision:
     assignment: Assignment
     tier: "ReminderTier"
     reason: str
-

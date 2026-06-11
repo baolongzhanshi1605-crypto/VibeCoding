@@ -1,5 +1,10 @@
 __pycache__/
 *.py[cod]
 config.json
+config.no_popup.json
 data/state.json
+data/state.*.json
 data/manual_assignments.json
+data/edge_profile/
+data/*.html
+data/*.json

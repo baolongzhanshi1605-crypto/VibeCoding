@@ -45,7 +45,7 @@ def run_check(
             skipped += 1
             continue
 
-        title = f"学习通作业提醒：{assignment.course}"
+        title = f"Chaoxing Homework Reminder: {assignment.course}"
         content = format_reminder_message(decision, now)
         delivered = False
         for notifier in notifiers:
@@ -58,4 +58,3 @@ def run_check(
             skipped += 1
 
     return CheckResult(checked=len(assignments), notified=notified, skipped=skipped)
-

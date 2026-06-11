@@ -1,7 +1,12 @@
 {
+  "provider": "chaoxing",
   "timezone": "Asia/Shanghai",
   "lookahead_hours": 36,
   "manual_assignments_path": "data/manual_assignments.json",
+  "edge_profile_path": "data/edge_profile",
+  "course_cache_path": "data/course_cards_attrs.json",
+  "chaoxing_cache_dir": "data",
+  "request_delay_seconds": 0.2,
   "state_path": "data/state.json",
   "enable_windows_popup": true
 }

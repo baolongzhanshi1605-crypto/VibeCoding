@@ -52,6 +52,20 @@ class ReminderStateTest(unittest.TestCase):
         self.assertFalse(too_soon)
         self.assertTrue(after_interval)
 
+    def test_strong_reminder_can_repeat_on_wake_after_thirty_minutes(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            state = ReminderState(Path(temp_dir) / "state.json")
+            decision = self.decision(ReminderTier.STRONG)
+            state.mark_sent(decision, self.now)
+
+            should_send = state.should_send(
+                decision,
+                self.now + timedelta(minutes=31),
+                "wake",
+            )
+
+        self.assertTrue(should_send)
+
     def test_none_decision_never_sends(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             state = ReminderState(Path(temp_dir) / "state.json")

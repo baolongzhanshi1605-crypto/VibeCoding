@@ -1,5 +1,5 @@
 param(
-    [ValidateSet("login", "unlock", "timer", "manual")]
+    [ValidateSet("login", "unlock", "wake", "timer", "manual")]
     [string]$Trigger = "manual"
 )
 
