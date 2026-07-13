@@ -1,0 +1,9 @@
+{
+  "name": "Codex Token 用量监控",
+  "short_name": "Codex Token",
+  "start_url": "/display",
+  "display": "standalone",
+  "background_color": "#f7f8fc",
+  "theme_color": "#f7f8fc",
+  "lang": "zh-CN"
+}

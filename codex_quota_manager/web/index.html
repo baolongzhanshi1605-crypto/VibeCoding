@@ -1,0 +1,201 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+    <meta name="theme-color" content="#f7f8fc">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="default">
+    <meta name="apple-mobile-web-app-title" content="Codex Token">
+    <title>Codex Token 用量监控</title>
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+    <link rel="manifest" href="/manifest.webmanifest">
+    <link rel="stylesheet" href="/styles.css?v=20260713-5">
+    <script src="/app.js?v=20260713-5" defer></script>
+  </head>
+  <body>
+    <header class="appbar">
+      <div class="brand">
+        <p class="eyebrow">LIVE USAGE MONITOR</p>
+        <h1>Codex Token 用量监控</h1>
+      </div>
+      <div class="header-tools">
+        <div class="page-actions">
+          <button id="export-button" type="button">导出快照</button>
+          <button id="all-tasks-button" type="button" class="primary-action">全部任务 <span id="task-total">0</span></button>
+        </div>
+        <div class="connection" aria-live="polite">
+          <span id="live-dot" class="live-dot"></span>
+          <div>
+            <strong id="connection-label">正在连接</strong>
+            <span id="updated-at">等待数据</span>
+          </div>
+        </div>
+      </div>
+    </header>
+
+    <main>
+      <section class="overview-grid" aria-label="实时概览">
+        <article class="quota-card" id="short-window">
+          <header>
+            <div>
+              <span class="metric-label">短周期额度</span>
+              <strong id="short-window-name">5 小时窗口</strong>
+            </div>
+            <span class="source-badge">动态</span>
+          </header>
+          <div class="quota-content">
+            <div class="gauge" id="short-gauge" role="img" aria-label="短周期剩余额度">
+              <div><strong id="short-remaining">--</strong><span>% 剩余</span></div>
+            </div>
+            <dl>
+              <div><dt>已使用</dt><dd id="short-used">--</dd></div>
+              <div><dt>距离刷新</dt><dd id="short-reset">--</dd></div>
+            </dl>
+          </div>
+        </article>
+
+        <article class="quota-card" id="weekly-window">
+          <header>
+            <div>
+              <span class="metric-label">周额度</span>
+              <strong id="weekly-window-name">7 天窗口</strong>
+            </div>
+            <span class="source-badge">账户</span>
+          </header>
+          <div class="quota-content">
+            <div class="gauge gauge-weekly" id="weekly-gauge" role="img" aria-label="周剩余额度">
+              <div><strong id="weekly-remaining">--</strong><span>% 剩余</span></div>
+            </div>
+            <dl>
+              <div><dt>已使用</dt><dd id="weekly-used">--</dd></div>
+              <div><dt>距离刷新</dt><dd id="weekly-reset">--</dd></div>
+            </dl>
+          </div>
+        </article>
+
+        <article class="telemetry-card">
+          <header>
+            <div>
+              <span class="metric-label">关键数据</span>
+              <strong>实时用量</strong>
+            </div>
+          </header>
+          <div class="telemetry-grid">
+            <div><span>运行任务</span><strong id="active-count">0</strong></div>
+            <div><span>活动累计</span><strong id="running-tokens">--</strong></div>
+            <div><span>本次合计</span><strong id="turn-tokens">--</strong></div>
+            <div><span>今日花费</span><strong id="daily-tokens">--</strong></div>
+            <div><span>消耗速度</span><strong id="burn-rate">--</strong></div>
+            <div><span>当前安全预算</span><strong id="available-budget">--</strong></div>
+          </div>
+        </article>
+
+        <article class="trend-card">
+          <header>
+            <div>
+              <span class="metric-label">额度变化</span>
+              <strong id="chart-range-label">最近 6 小时</strong>
+            </div>
+            <div class="chart-tools">
+              <div class="range-control" aria-label="趋势时间范围">
+                <button type="button" data-chart-hours="6" class="active">6时</button>
+                <button type="button" data-chart-hours="24">24时</button>
+              </div>
+              <div class="legend" aria-label="图例">
+                <span><i class="legend-short"></i>短</span>
+                <span><i class="legend-weekly"></i>周</span>
+              </div>
+            </div>
+          </header>
+          <canvas id="quota-chart" aria-label="额度变化趋势"></canvas>
+          <div class="chart-axis"><span id="chart-range-start">6 小时前</span><span>现在</span></div>
+        </article>
+      </section>
+
+      <section class="tasks-section">
+        <header class="section-header">
+          <div>
+            <p class="eyebrow">RECENT TASKS</p>
+            <h2>最近任务</h2>
+          </div>
+          <button id="recent-all-button" type="button" class="text-action">查看全部</button>
+        </header>
+        <div class="task-columns" aria-hidden="true">
+          <span>任务</span><span>累计 / 本次</span><span>建议上限（仅提醒）</span><span>优先级</span>
+        </div>
+        <div id="task-list" class="task-list" aria-live="polite"></div>
+        <div id="empty-state" class="empty-state" hidden>
+          <strong>暂无任务数据</strong>
+        </div>
+      </section>
+
+      <section class="control-strip" aria-label="调度信息">
+        <div class="control-item">
+          <span>预算执行</span><strong>只读提醒</strong>
+        </div>
+        <div class="control-item">
+          <span>预算依据</span><strong id="budget-source">--</strong>
+        </div>
+        <div class="control-item">
+          <span>短周期安全余量</span><strong id="short-reserve">10%</strong>
+        </div>
+        <div class="control-item">
+          <span>周安全余量</span><strong id="weekly-reserve">15%</strong>
+        </div>
+        <div class="control-item">
+          <span>周内剩余周期</span><strong id="weekly-slots">--</strong>
+        </div>
+        <div class="control-item control-source">
+          <span>自动计算时机</span><strong id="allocation-timing">任务运行时</strong>
+        </div>
+        <p id="warning-text" class="warning-text" hidden></p>
+      </section>
+    </main>
+
+    <footer>
+      <span>只读采集 Codex 本机状态 · <strong id="data-source">--</strong></span>
+      <span id="footer-clock">--</span>
+    </footer>
+
+    <dialog id="task-detail-dialog" class="panel-dialog" aria-labelledby="task-detail-title">
+      <div class="dialog-shell">
+        <header class="dialog-header">
+          <div>
+            <p class="eyebrow">TASK TELEMETRY</p>
+            <h2 id="task-detail-title">任务详情</h2>
+          </div>
+          <button id="task-detail-close" type="button" class="icon-button" aria-label="关闭任务详情" title="关闭">×</button>
+        </header>
+        <div id="task-detail-body" class="task-detail-body"></div>
+      </div>
+    </dialog>
+
+    <dialog id="all-tasks-dialog" class="panel-dialog all-tasks-dialog" aria-labelledby="all-tasks-title">
+      <div class="dialog-shell">
+        <header class="dialog-header">
+          <div>
+            <p class="eyebrow">TASK ARCHIVE</p>
+            <h2 id="all-tasks-title">全部任务</h2>
+          </div>
+          <button id="all-tasks-close" type="button" class="icon-button" aria-label="关闭全部任务" title="关闭">×</button>
+        </header>
+        <div class="task-browser-tools">
+          <input id="task-search" type="search" placeholder="搜索名称、模型或工程目录" aria-label="搜索任务">
+          <select id="task-status-filter" aria-label="筛选任务状态">
+            <option value="all">全部状态</option>
+            <option value="active">运行与等待</option>
+            <option value="completed">已完成</option>
+            <option value="idle">空闲</option>
+          </select>
+          <span id="filtered-task-count">0 个任务</span>
+        </div>
+        <div class="all-task-columns" aria-hidden="true">
+          <span>任务</span><span>状态</span><span>累计 Token</span><span>本次 Token</span><span>最近更新</span>
+        </div>
+        <div id="all-task-list" class="all-task-list"></div>
+      </div>
+    </dialog>
+    <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
+  </body>
+</html>
