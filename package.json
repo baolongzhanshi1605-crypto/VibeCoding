@@ -1,0 +1,14 @@
+{
+  "name": "dsh-api-balance",
+  "version": "0.3.0",
+  "private": true,
+  "description": "DSH 插件：实时显示 DeepSeek API 余额，并按缓存命中/未命中输入、输出、图片归因每一次调用的花费。",
+  "type": "module",
+  "scripts": {
+    "build": "node tools/build.mjs",
+    "verify": "node tools/verify-artifacts.mjs",
+    "probe": "node tools/probe-balance.mjs",
+    "test": "node --test tools/*.test.mjs"
+  },
+  "license": "MIT"
+}

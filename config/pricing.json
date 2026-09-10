@@ -1,0 +1,22 @@
+{
+  "_comment": [
+    "dsh-api-balance 外部价格覆盖表。留空对象 {} 表示完全使用 src/core/pricing.js 的内置默认值。",
+    "只写你要覆盖的字段；models 按模型键深合并，其余字段浅合并。",
+    "价格单位：USD / 每 100 万 tokens，数组顺序 [谷时价, 峰时价]。",
+    "官方价格页更新后，改这里即可，无需改动插件代码。",
+    "  https://api-docs.deepseek.com/quick_start/pricing"
+  ],
+  "_active": false,
+  "version": "2026-09-14",
+  "currency": "USD",
+  "peak": {
+    "utcDays": [1, 2, 3, 4, 5],
+    "utcHours": [[1, 4], [6, 10]]
+  },
+  "models": {
+    "deepseek-flash": { "cacheHit": [0.003, 0.006], "cacheMiss": [0.15, 0.3], "output": [0.6, 1.2] },
+    "deepseek-v4-pro": { "cacheHit": [0.022, 0.044], "cacheMiss": [0.66, 1.32], "output": [1.98, 3.96] }
+  },
+  "alias_note": "deepseek-v4-pro 自 2026-09-14 12:00(北京) 起被路由到 V4.1-Flash 并按 Flash 价计费；若你的账号已生效，可把 aliases 里加一条 \"deepseek-v4-pro\": \"deepseek-flash\" 以更贴近账单。",
+  "aliases": {}
+}
