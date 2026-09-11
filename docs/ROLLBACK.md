@@ -14,8 +14,10 @@
 | 装完成常驻后 **DSH 起不来 / 白屏** | 完全退出 DSH → 双击桌面快捷方式（它是纯 PowerShell，不依赖 DSH）→ `[4]` → 重启 DSH |
 | 只是动态插件在捣乱（没装常驻版） | 在对话里说「停用 apibal-1」，或直接**重启 DSH**——动态插件随进程消失 |
 | 补丁文件被改坏 | 关闭 DSH → 把最近一个 `cordis.patch.yml.bak-*` 复制回 `cordis.patch.yml` → 重启 |
-| **改了源码以后变坏了** | `git -C E:\DSHarness_Project\repo-one restore --source=dsh-api-balance-v0.3.0 -- dsh-api-balance` |
-| 想确认到底坏在哪 | 双击桌面快捷方式 → `[2] 验证` → 看逐项 PASS/FAIL 与具体错误文本 |
+| **改了源码以后变坏了** | `git -C E:\DSHarness_Project\repo-one restore --source=<提交或标签> -- dsh-api-balance`（回档点见 §5） |
+| **累计数字不对 / 想清零** | 设置页 →「累计数据与控制」→ `重置累计`；或删掉 `%APPDATA%\dsh-desktop\harness\dsh-api-balance\` 整个目录 |
+| **改了配置但界面没变化** | 大概率**没重启 DSH**：`patchReload: live` 只让客户端热更新，**宿主必须重启才会重新 apply** |
+| 想确认到底坏在哪 | 双击桌面快捷方式 → `[2] 验证`；或直接读诊断：`curl http://127.0.0.1:<端口>/dsh-api-balance/snapshot` 看 `clientDiag` |
 
 **关键设计**：桌面快捷方式指向 `tools/desktop-admin.ps1`，它是一个**纯 PowerShell 菜单，不加载 DSH、不依赖插件**。这就是「DSH 已经起不来」时你仍然有入口的原因。
 
@@ -46,7 +48,7 @@ git -C $repo log --oneline -5 -- dsh-api-balance                     # 看这个
 ### L4 用法（异地，需要网络）
 
 ```powershell
-pwsh -File E:\DSHarness_Project\repo-one\dsh-api-balance\tools\push-backup.ps1
+powershell -File E:\DSHarness_Project\repo-one\dsh-api-balance\tools\push-backup.ps1
 # 该脚本只推本子项目、只写独立分支、绝不强推、绝不碰远程 main
 ```
 
@@ -115,9 +117,9 @@ cordis_stop apibal-1        # 停用当前 Run，保留所有 Package 与授权
 双击桌面快捷方式 → `[4]`，或命令行：
 
 ```powershell
-pwsh -File E:\DSHarness_Project\repo-one\dsh-api-balance\install\uninstall.ps1
+powershell -File E:\DSHarness_Project\repo-one\dsh-api-balance\install\uninstall.ps1
 # 连 node_modules 里的包一起删：
-pwsh -File E:\DSHarness_Project\repo-one\dsh-api-balance\install\uninstall.ps1 -RemovePackage
+powershell -File E:\DSHarness_Project\repo-one\dsh-api-balance\install\uninstall.ps1 -RemovePackage
 ```
 
 它做的事：
@@ -177,9 +179,9 @@ cordis_run (mode:'run', pluginId:'apibal-1', packageId: currentPackageId)   # �
 ```powershell
 cd E:\DSHarness_Project\repo-one\dsh-api-balance
 node tools\build.mjs                       # 重新构建
-pwsh -File install\install.ps1             # 幂等：覆盖包 + 补丁块已存在则跳过
+powershell -File install\install.ps1             # 幂等：覆盖包 + 补丁块已存在则跳过
 # 完全退出并重启 DSH
-pwsh -File install\verify.ps1              # 验证
+powershell -File install\verify.ps1              # 验证
 ```
 
 `install.ps1` 每次都重新备份补丁，因此**每次更新都自动产生一个新的回滚点**。
@@ -212,7 +214,7 @@ pwsh -File install\verify.ps1              # 验证
 ## 6. 验证：每次更新后跑这一条
 
 ```powershell
-pwsh -File E:\DSHarness_Project\repo-one\dsh-api-balance\install\verify.ps1
+powershell -File E:\DSHarness_Project\repo-one\dsh-api-balance\install\verify.ps1
 ```
 
 **A 段（静态，不需要 DSH 在跑）**：补丁块存在、两处 `node_modules` 包存在、包内 4 个关键文件存在。
@@ -223,33 +225,48 @@ pwsh -File E:\DSHarness_Project\repo-one\dsh-api-balance\install\verify.ps1
 ## 7. 当前状态与残余风险
 
 ### 已就位的回滚点
-- **常驻平面：已安装**（2026-09-10）。
-  - 安装前补丁备份：`%APPDATA%\dsh-desktop\harness\profiles\web\cordis.patch.yml.bak-20260910-211652`
-    （以及首次那次 `…-211518`，内容同为安装前状态）。
+- **常驻平面：已安装并跑通**（当前 **v0.6.0**）。
   - 插件包：`profiles\web\node_modules\dsh-api-balance-local\` 与 `profiles\node_modules\dsh-api-balance-local\`。
-  - 补丁块：`cordis.patch.yml` 第 10–14 行，BEGIN/END 标记包裹，已通过回读自检。
-  - **停用一条命令**：`pwsh -File install\uninstall.ps1` → 重启 DSH。
-  - **注意：需重启 DSH 后才真正生效**；重启前补丁虽已写入，但不会加载。
-- **动态平面**：`apibal-1` 当前为 **stopped**（为常驻安装让位，避免同 Slot 撞名）。
-  - 版本 `pkg-1`（v0.1.0）与 `pkg-2`（v0.2.0）都还保留；`pkg-3`（v0.3.0）尚未定义。
-  - 重新启用：`cordis_run apibal-1 pkg-2 run`；或按 §4.2 用最新源码定义 `pkg-3` 再 `update`。
+  - 补丁块：`cordis.patch.yml`，BEGIN/END 标记包裹，每次安装后自动回读自检。
+  - 补丁备份：`cordis.patch.yml.bak-<时间戳>`，每次 `install.ps1` 都生成一份新的。
+  - **停用一条命令**：`powershell -File install\uninstall.ps1` → 重启 DSH。
+  - **注意：需重启 DSH 后才真正生效**；`patchReload: live` 只让**客户端**热更新，**宿主是 Node 模块，必须重启才会重新 apply**（这一条踩过好几次）。
+- **累计账本**：`%APPDATA%\dsh-desktop\harness\dsh-api-balance\usage-ledger.json`
+  - 删掉整个 `dsh-api-balance` 目录 = 累计清零；先把文件拷走再删 = 可回退。
+  - **刻意不放在插件包目录里**：`install.ps1` 更新时会先删旧包再复制，放那儿会被顺手抹掉。
+- **源码回档点**（`repo-one`，分支 `main`）：
+  ```
+  472c984  v0.6.0  累计持久化 + 5 类服务时序/样式/凭据/竞态修复   ← 当前
+  c166663  v0.3.1  客户端 bundle id 修复            （tag: dsh-api-balance-v0.3.1）
+  ec8aec7           GitHub 备份脚本 + BOM 守卫 + 四层回档文档
+  82b61ee  v0.3.0  首版常驻插件                       （tag: dsh-api-balance-v0.3.0）
+  ```
+  回退：`git -C E:\DSHarness_Project\repo-one restore --source=dsh-api-balance-v0.3.1 -- dsh-api-balance`
+- **动态平面**：`apibal-1` 为 **stopped**（为常驻安装让位，避免同 Slot 撞名）；`pkg-1`/`pkg-2` 仍保留可再启。
 - **桌面快捷方式**：`C:\Users\han\OneDrive\桌面\DSH API 余额与消耗.lnk`。删除它即可，无其它副作用。
-- **工作区内改动**：`repo-one\dsh-api-balance\` 已于 2026-09-10 提交（`82b61ee`，21 个文件 / 3103 行），
-  并打了回档标签 `dsh-api-balance-v0.3.0`；`repo-one` 分支 `main`，工作区干净。
-- **远程备份**：`repo-one` 已配置远程 `vibecoding` → `https://github.com/baolongzhanshi1605-crypto/VibeCoding.git`。
-  ⚠️ **推送当时未成功**：诊断显示 `github.com:443` 连不上（`git ls-remote` 一开始可通，
-  随后读也超时、curl 两个端点均返回 `000`），本机 git 也未配置代理。
-  网络恢复后运行 `pwsh -File tools\push-backup.ps1` 即可补上，脚本会重建分支并推送。
-  远程目前只有 `main`（`c52ad8c`），**未被本次操作改动过任何字节**。
+- **远程备份**：✅ **已推送成功**。`repo-one` 配置了远程 `vibecoding` →
+  `https://github.com/baolongzhanshi1605-crypto/VibeCoding.git`。
+  - 远程分支 `refs/heads/dsh-api-balance`（只含本子项目，内容位于仓库根）。
+  - 远程主干 `refs/heads/main` **仍是 `c52ad8c`，一个字节都没动**（全程只对 main 做过读操作）。
+  - 刷新备份（幂等）：`powershell -File tools\push-backup.ps1`。
+  - 脚本守卫：目标分支不许是 main/master；工作区不干净就拒绝运行；没有任何 `--force`。
 
 ### 残余风险（诚实声明）
-1. **常驻平面尚未在真实浏览器里跑过**。加载级验证已通过（`node tools/verify-artifacts.mjs`：bundle 能注册、
-   factory 能执行、导出 `{apply}`；host 插件能 import、空 ctx 下 `apply()` 不抛）。但 DOM 渲染只能在装完之后看。
-   因此**安装后第一件事就是跑 `verify.ps1` 的 B 段**；不通过就用 `uninstall.ps1` 退回，动态平面完全不受影响。
+1. **常驻平面已在真实浏览器里验证通过**（2026-09-10，v0.4.0）。已确认注册进 Slot 的占用者：
+   `conversation.session.header.utilities` 的 `dsh-api-balance`（order 40）与 `settings.section` 的
+   `dsh-api-balance`（order 60）均为 `active: true`；同一函数里相邻注册的 `conversation.composer.dock`
+   未单独复查，但三者共用同一个已就绪的 `slots` 对象。
 2. **T3 的兜底不是 100%**。组件内部做了完整兜底（hook 与渲染分离 + 全程 try/catch + 全字段 `|| {}`），但如果 React 自身在该 Slot 抛错，最坏结果是该 Slot 区域渲染失败——**影响范围限于该区域，不会让 DSH 进程崩溃**（进程崩溃只可能来自 Host 半，而 Host 半的全部外部调用都在 try/catch 内，且已用「空 ctx 调用 apply()」验证过降级路径）。
 3. **`llm/stream` 拦截是全进程的**。如果插件的包装器有 bug，理论上会影响所有模型调用。当前包装器的设计是「逐 chunk 原样透传 + `finally` 记账 + 不写 `catch`」，即**不改变控制流、不吞异常**。这是本项目最需要保持克制的一段代码，任何改动都必须遵守这个约束。
-4. **计费是估算**。只统计本进程存活期间的调用（重启归零），且按官方标价而非账单实扣。不要用它做财务对账。
-5. **HTTP 路由的暴露面**。常驻平面会注册 `/dsh-api-balance/*` 只读接口，**返回余额与用量，不返回密钥**。它跟随 DSH 自身的监听地址（本机回环）；若你把 DSH 暴露到局域网，这些数字也会随之可读。
+4. **计费是估算**。只统计本进程存活期间的调用（重启归零），且按官方标价 × 固定汇率，而非账单实扣。不要用它做财务对账。
+5. **HTTP 路由的暴露面**。常驻平面会注册 `/dsh-api-balance/*` 只读接口，**返回余额与用量，不返回密钥**。它跟随 DSH 自身的监听地址（本机回环 + 访问令牌）；若你把 DSH 暴露到局域网，这些数字也会随之可读。
+6. **「服务未就绪就静默降级」是这个项目踩过的最深的坑**。任何新增的服务依赖，
+   都必须问一句：这个服务在常驻平面 apply 的那一刻**一定**已经注册了吗？不确定就必须 `inject` 等它。
+   **完整清单（哪个服务存在、哪个不存在、拿不到怎么办）见 `TECHNICAL.md` §5.9** —— 新增依赖前必查。
+7. **5 秒刷新是对余额接口的压力**。用户要求「实时感」，所以宿主每 5 秒打一次 `/user/balance`。
+   该接口不计费、响应很小，但如果同时开多个 DSH 实例、或担心被限流，可在设置页调到 1 分钟。
+8. **累计账本是一个新的持久化面**。它只存聚合计数器（无明细），每 5 秒最多写一次、异步、原子改名。
+   但它确实会往 DSH home 里写文件；不想留就删目录。文件损坏时会**安全忽略并保留原文件**，不会让插件失效。
 
 ---
 

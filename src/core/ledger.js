@@ -19,6 +19,12 @@ export const MAX_CALL_ROWS = 1000
 export function createLedger() {
   return {
     createdAt: Date.now(),
+    /** 这是第几次运行（从持久化数据恢复时递增）。 */
+    runs: 1,
+    /** 是否成功从磁盘恢复过累计数据（UI 用它区分「累计」与「本次」）。 */
+    restored: false,
+    /** 上次从历史会话日志回填的时刻；存在即表示不必再自动回填。 */
+    backfilledAt: 0,
     calls: 0,
     rows: [],
     dropped: 0,
@@ -160,6 +166,8 @@ export function summarize(ledger, options = {}) {
   }))
   return {
     since: new Date(ledger.createdAt).toISOString(),
+    runs: ledger.runs || 1,
+    restored: ledger.restored === true,
     calls: ledger.calls,
     failedCalls: ledger.failedCalls,
     unpricedCalls: ledger.unpricedCalls,
@@ -188,4 +196,95 @@ function rank(map, topN) {
     .map((key) => ({ key, ...map[key] }))
     .sort((a, b) => b.cost - a.cost)
     .slice(0, topN)
+}
+
+// --- 持久化：把「累计」活过重启 ---------------------------------------------
+
+/** 账本文件格式版本。改结构时递增，旧文件会被安全忽略而不是读出垃圾。 */
+export const LEDGER_FORMAT_VERSION = 1
+
+/** 持久化时每个聚合维度最多保留多少条（防止 bySession 无限增长）。 */
+export const MAX_PERSISTED_BUCKETS = 60
+
+/** 按 cost 降序截断一个聚合 map。 */
+function pruneBuckets(map, limit) {
+  const keys = Object.keys(map)
+  if (keys.length <= limit) return map
+  return Object.fromEntries(
+    keys.sort((a, b) => (map[b].cost || 0) - (map[a].cost || 0)).slice(0, limit).map((key) => [key, map[key]]),
+  )
+}
+
+/**
+ * 导出可持久化的聚合快照。
+ * 刻意**不导出** `rows`（明细环形缓冲）：它只对「最近调用」表有意义，
+ * 而且是唯一会无界增长的部分；累计数字全部来自聚合计数器。
+ */
+export function exportLedger(ledger) {
+  return {
+    version: LEDGER_FORMAT_VERSION,
+    createdAt: ledger.createdAt,
+    updatedAt: Date.now(),
+    runs: ledger.runs || 1,
+    backfilledAt: ledger.backfilledAt || 0,
+    calls: ledger.calls,
+    failedCalls: ledger.failedCalls,
+    unpricedCalls: ledger.unpricedCalls,
+    cacheHitTokens: ledger.cacheHitTokens,
+    cacheMissTokens: ledger.cacheMissTokens,
+    outputTokens: ledger.outputTokens,
+    reasoningTokens: ledger.reasoningTokens,
+    imageTokensEstimate: ledger.imageTokensEstimate,
+    costTotal: ledger.costTotal,
+    costCacheHit: ledger.costCacheHit,
+    costCacheMiss: ledger.costCacheMiss,
+    costOutput: ledger.costOutput,
+    costPeak: ledger.costPeak,
+    costOffPeak: ledger.costOffPeak,
+    byModel: pruneBuckets(ledger.byModel, MAX_PERSISTED_BUCKETS),
+    byDay: pruneBuckets(ledger.byDay, MAX_PERSISTED_BUCKETS),
+    byPurpose: pruneBuckets(ledger.byPurpose, MAX_PERSISTED_BUCKETS),
+    bySession: pruneBuckets(ledger.bySession, MAX_PERSISTED_BUCKETS),
+  }
+}
+
+/**
+ * 把持久化数据装回账本（原地修改）。
+ * 任何字段缺失、类型不对、版本不认识 —— 一律忽略该字段并保持 0，**绝不抛**：
+ * 一个坏掉的账本文件不该让插件失效。
+ * @returns 是否成功装载（用于 UI 显示「已恢复」还是「全新开始」）
+ */
+export function importLedger(ledger, data) {
+  if (!data || typeof data !== 'object') return false
+  if (data.version !== LEDGER_FORMAT_VERSION) return false
+
+  const count = (value) => (typeof value === 'number' && Number.isFinite(value) && value >= 0 ? value : 0)
+  const buckets = (value) => (value && typeof value === 'object' && !Array.isArray(value) ? value : {})
+
+  ledger.createdAt = count(data.createdAt) || ledger.createdAt
+  ledger.runs = count(data.runs) || 1
+  ledger.backfilledAt = count(data.backfilledAt)
+  ledger.calls = count(data.calls)
+  ledger.failedCalls = count(data.failedCalls)
+  ledger.unpricedCalls = count(data.unpricedCalls)
+  ledger.cacheHitTokens = count(data.cacheHitTokens)
+  ledger.cacheMissTokens = count(data.cacheMissTokens)
+  ledger.outputTokens = count(data.outputTokens)
+  ledger.reasoningTokens = count(data.reasoningTokens)
+  ledger.imageTokensEstimate = count(data.imageTokensEstimate)
+  ledger.costTotal = count(data.costTotal)
+  ledger.costCacheHit = count(data.costCacheHit)
+  ledger.costCacheMiss = count(data.costCacheMiss)
+  ledger.costOutput = count(data.costOutput)
+  ledger.costPeak = count(data.costPeak)
+  ledger.costOffPeak = count(data.costOffPeak)
+  ledger.byModel = buckets(data.byModel)
+  ledger.byDay = buckets(data.byDay)
+  ledger.byPurpose = buckets(data.byPurpose)
+  ledger.bySession = buckets(data.bySession)
+  // 只有真的恢复出「有内容」的累计才算恢复成功。
+  // 空文件（全 0）也返回 true 的话，界面会显示「已从磁盘恢复累计」而数字是 0 ——
+  // 那和「功能没生效」长得一模一样，正是最容易被误判成 bug 的情形。
+  ledger.restored = ledger.calls > 0
+  return true
 }

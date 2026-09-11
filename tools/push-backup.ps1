@@ -7,7 +7,8 @@
     * 只推送**本子项目**：用 git 底层命令把 dsh-api-balance/ 抽成一条独立历史，
       仓库里其它子项目（chaoxing-homework-reminder 等）与根文件都不会被带上。
     * 只写**新分支**：远程 refspec 锁定为 refs/heads/<Branch>，远程 main 原样不动。
-    * **绝不强推**：脚本里没有任何 --force / +refspec，非快进会被 git 直接拒绝。
+    * **绝不强推**：脚本里没有任何 --force / +refspec；每次备份都**续在远端分支之后**
+      （快进式追加），所以不靠强推也能持续更新。
     * 推之前会做守卫检查：目标分支名不能是 main/master；仓库工作区必须干净。
 
   ⚠️ 环境说明：本机 git 未配置代理，如果 github.com 连不上会直接报连接失败。
@@ -26,8 +27,8 @@
   只演练：重建本地分支并打印将要推送的内容，不联网。
 
 .EXAMPLE
-  pwsh -File tools\push-backup.ps1
-  pwsh -File tools\push-backup.ps1 -WhatIf
+  powershell -File tools\push-backup.ps1
+  powershell -File tools\push-backup.ps1 -WhatIf
 #>
 [CmdletBinding()]
 param(
@@ -77,9 +78,27 @@ try {
   if (-not $tree) { throw "HEAD 里找不到子项目目录 $SubProjectName —— 请先 git add + git commit。" }
   Step "子树 tree 对象：$tree"
 
+  # ---- 备份历史要**续在远端之后**，否则必然非快进、而本脚本绝不强推 -------------
+  # commit-tree 默认造孤儿提交：第一次推送没问题，第二次起远端拒绝（真实踩过，2026-09-11）。
+  # 修法：先把远端分支取回来当父提交，每次备份都是快进式追加；
+  # 远端还没有这个分支（首次备份）时，就仍然是无父的根提交。
+  $parent = ''
+  git fetch $Remote "refs/heads/$Branch`:refs/remotes/$Remote/$Branch" --quiet 2>$null
+  $remoteTip = git rev-parse --verify --quiet "refs/remotes/$Remote/$Branch"
+  if ($remoteTip) {
+    $parent = ($remoteTip -join '').Trim()
+    Step "远端分支已有 $($parent.Substring(0, 7))…，新备份将续在其后（快进）"
+  } else {
+    Step "远端还没有该分支，首次备份（根提交）"
+  }
+
   $stamp = Get-Date -Format 'yyyy-MM-dd HH:mm:ss'
   $message = "$SubProjectName 备份 @ $stamp"
-  $commit = (git commit-tree $tree -m $message).Trim()
+  $commit = if ($parent) {
+    (git commit-tree $tree -p $parent -m $message).Trim()
+  } else {
+    (git commit-tree $tree -m $message).Trim()
+  }
   git update-ref "refs/heads/$Branch" $commit
   Step "本地分支 refs/heads/$Branch → $commit"
 

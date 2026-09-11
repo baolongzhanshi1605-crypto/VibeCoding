@@ -26,8 +26,8 @@
   只打印将要做什么，不落盘。
 
 .EXAMPLE
-  pwsh -File install\install.ps1
-  pwsh -File install\install.ps1 -DshHome 'C:\Users\han\.dsh' -DryRun
+  powershell -File install\install.ps1
+  powershell -File install\install.ps1 -DshHome 'C:\Users\han\.dsh' -DryRun
 #>
 [CmdletBinding()]
 param(
@@ -143,9 +143,9 @@ if (-not $DryRun) {
 
 Say ""
 Say "完成。请重启 DSH（桌面端请完全退出再启动）后验证：" 'Green'
-Say "  pwsh -File install\verify.ps1"
+Say "  powershell -File install\verify.ps1"
 Say ""
 Say "回滚（出任何问题先做这一步）：" 'Yellow'
-Say "  pwsh -File install\uninstall.ps1"
+Say "  powershell -File install\uninstall.ps1"
 Say "  备份文件：$backup"
 Say ""

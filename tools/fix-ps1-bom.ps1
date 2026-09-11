@@ -9,7 +9,7 @@
 # 所以：**改完任何 .ps1，跑一下这个脚本再提交**。
 #
 # 用法（在项目根执行）：
-#   pwsh -File tools\fix-ps1-bom.ps1
+#   powershell -File tools\fix-ps1-bom.ps1
 # ---------------------------------------------------------------------------
 
 $ErrorActionPreference = 'Stop'

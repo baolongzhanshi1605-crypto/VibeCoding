@@ -16,8 +16,8 @@
   覆盖桌面路径，默认自动探测。
 
 .EXAMPLE
-  pwsh -File tools\make-desktop-shortcut.ps1
-  pwsh -File tools\make-desktop-shortcut.ps1 -Name 'DSH 余额'
+  powershell -File tools\make-desktop-shortcut.ps1
+  powershell -File tools\make-desktop-shortcut.ps1 -Name 'DSH 余额'
 #>
 [CmdletBinding()]
 param(

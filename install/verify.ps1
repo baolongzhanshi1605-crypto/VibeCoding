@@ -13,8 +13,8 @@
   DSH Web 的地址。默认取环境变量 DSH_WEB_URL。
 
 .EXAMPLE
-  pwsh -File install\verify.ps1
-  pwsh -File install\verify.ps1 -BaseUrl http://127.0.0.1:50944
+  powershell -File install\verify.ps1
+  powershell -File install\verify.ps1 -BaseUrl http://127.0.0.1:50944
 #>
 [CmdletBinding()]
 param(
@@ -99,8 +99,8 @@ Write-Host ("结果：$pass 通过 / $fail 失败 / $warn 警告") -ForegroundCo
 Write-Host ""
 if ($fail -gt 0) {
   Write-Host "失败项的排查顺序：" -ForegroundColor Yellow
-  Write-Host "  1) 还没安装 → pwsh -File install\install.ps1"
+  Write-Host "  1) 还没安装 → powershell -File install\install.ps1"
   Write-Host "  2) 装了没重启 → 完全退出 DSH Desktop 再启动"
-  Write-Host "  3) 重启后仍失败 → pwsh -File install\uninstall.ps1 回滚，并查 docs\ROLLBACK.md"
+  Write-Host "  3) 重启后仍失败 → powershell -File install\uninstall.ps1 回滚，并查 docs\ROLLBACK.md"
   exit 1
 }

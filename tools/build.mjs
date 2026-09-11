@@ -87,12 +87,25 @@ function stripStandaloneCommentLines(source) {
     .trim()
 }
 
-function wrapForDefine(body) {
-  return `return {\n  apply(ctx) {\n${stripStandaloneCommentLines(body)}\n  },\n}\n`
+/**
+ * 两个平面的存储桥。
+ *
+ * 共用函数体里**不能 import**，所以「能不能持久化」这件事由包装层决定：
+ *   * 动态平面：受限求值器没有模块系统 → 注入 null，函数体自动退化为「仅内存」；
+ *   * 常驻平面：注入一个基于 node:fs/promises 的异步存储。
+ *
+ * 刻意用**异步** fs：项目红线里写着「不在 Host 半引入同步 IO」。
+ * 文件很小（几 KB）且每 5 秒最多写一次，异步完全够用，也不会阻塞事件循环。
+ */
+const DYNAMIC_STORAGE_DECL = '  const __storage = null\n'
+const PERSISTENT_STORAGE_DECL = '  const __storage = __makeLedgerStorage()\n'
+
+function wrapForDefine(body, storageDecl) {
+  return `return {\n  apply(ctx) {\n${storageDecl}${stripStandaloneCommentLines(body)}\n  },\n}\n`
 }
 
-const defineHost = wrapForDefine(hostBody)
-const defineClient = wrapForDefine(clientBody)
+const defineHost = wrapForDefine(hostBody, DYNAMIC_STORAGE_DECL)
+const defineClient = wrapForDefine(clientBody, '')
 
 const version = JSON.parse(read('package.json')).version
 const PURPOSE = '在 DSH 界面里实时显示 DeepSeek API 余额，并把每一次模型调用的花费按「缓存命中输入 / 未命中输入 / 输出 / 图片」拆开归因。'
@@ -108,17 +121,52 @@ const definePayload = {
 // --- 产物 2：常驻平面插件包 -------------------------------------------------
 
 const persistentIndex = `// 常驻平面 Host 半：ESM Cordis 插件，与动态平面共用同一份函数体。
+import { mkdir, readFile, rename, writeFile } from 'node:fs/promises'
+import { dirname, join } from 'node:path'
 import {
   PRICING_DEFAULT, mergePricing, priceOf, costOfUsage, resolvePriceModel, isPeakAt,
 } from './core/pricing.js'
-import { createLedger, recordCall, summarize, cacheHitRate, dayKey, MAX_CALL_ROWS } from './core/ledger.js'
+import { createLedger, recordCall, summarize, cacheHitRate, dayKey, MAX_CALL_ROWS, exportLedger, importLedger } from './core/ledger.js'
 import { BALANCE_URL, API_KEY_REF, buildCurlConfig, parseBalance, describeCurlFailure } from './core/deepseek.js'
 import { fmtMoney, fmtTokens, fmtPct, fmtAgo, fmtBalance, fmtCost, DEFAULT_MONEY } from './core/format.js'
 
 export const name = 'dsh-api-balance'
 
+// 声明硬依赖：常驻插件在组合里 apply 得比 webServer 注册更早，
+// 不注入的话 ctx.get('webServer') 会拿到 undefined，插件会静默变成「什么都不做」。
+export const inject = ['webServer']
+
+/**
+ * 账本持久化桥。只有常驻平面能 import node:fs，所以放在包装层，
+ * 共用函数体通过注入进来的 __storage 使用它（见 tools/build.mjs 顶部的说明）。
+ *
+ * 落点：<DSH_HOME>/dsh-api-balance/usage-ledger.json
+ * 刻意**不放在插件包目录里**：install.ps1 每次更新都会先删掉旧包目录再复制，
+ * 数据放那儿会被更新顺手抹掉。也不碰 DSH 的设置/凭据/会话，只是一个插件私有数据目录。
+ */
+function __makeLedgerStorage() {
+  const home = (typeof process !== 'undefined' && process.env && process.env.DSH_HOME) || ''
+  if (!home) return { enabled: false, path: null, reason: 'DSH_HOME 未设置，累计数据只保留在内存里' }
+  const path = join(home, 'dsh-api-balance', 'usage-ledger.json')
+  return {
+    enabled: true,
+    path,
+    async read() {
+      return await readFile(path, 'utf8')
+    },
+    async write(text) {
+      await mkdir(dirname(path), { recursive: true })
+      // 先写临时文件再改名：中途断电/被杀不会留下半截 JSON。
+      const temp = path + '.tmp'
+      await writeFile(temp, text, 'utf8')
+      await rename(temp, path)
+      return true
+    },
+  }
+}
+
 ${banner('Host 半 · apply(ctx) 主体', 'src/host.body.js')}export function apply(ctx) {
-${stripModuleSyntax(read('src/host.body.js'))}
+${PERSISTENT_STORAGE_DECL}${stripModuleSyntax(read('src/host.body.js'))}
 }
 `
 
@@ -150,6 +198,9 @@ ${stripModuleSyntax(read('src/client.body.js')).split('\n').map((l) => (l ? `   
     }
 
     exports.apply = apply
+    // 与官方客户端插件同构（如 dsh-client-ui-jobs 导出 inject = ["sessions","slots"]）：
+    // 让客户端运行时等到 slots 就绪再调用 apply，否则注册会静默落空。
+    exports.inject = ['slots']
     return module.exports
   },
 })

@@ -8,7 +8,7 @@
   这就是那个入口。
 
 .EXAMPLE
-  pwsh -File tools\desktop-admin.ps1
+  powershell -File tools\desktop-admin.ps1
 #>
 [CmdletBinding()]
 param()
@@ -33,6 +33,7 @@ function Menu {
   Write-Host "   [6] 打开技术文档"                       -ForegroundColor White
   Write-Host "   [7] 打开回滚与防崩方案"                 -ForegroundColor White
   Write-Host "   [8] 打开项目文件夹"                     -ForegroundColor White
+  Write-Host "   [9] 备份推送到 GitHub（需代理在线）"      -ForegroundColor White
   Write-Host "   [0] 退出"                               -ForegroundColor DarkGray
   Write-Host ""
 }
@@ -46,9 +47,11 @@ function Open-Dsh {
 }
 
 function Run-Script([string]$relative, [string[]]$extra = @()) {
-  $script = Join-Path $ProjectRoot $relative
+  $script = Split-Path -Parent $PSScriptRoot | Join-Path -ChildPath $relative
   if (-not (Test-Path -LiteralPath $script)) { Write-Host "  找不到 $script" -ForegroundColor Red; Start-Sleep -Seconds 3; return }
-  & pwsh -NoProfile -ExecutionPolicy Bypass -File $script @extra
+  # 直接在本进程里跑子脚本：不要写 pwsh（本机可能只有 Windows PowerShell 5.1，
+  # 写 pwsh 会直接 CommandNotFoundException）。
+  & $script @extra
   Write-Host ""
   Read-Host "  按回车返回菜单" | Out-Null
 }
@@ -69,6 +72,7 @@ while ($true) {
     '6' { Start-Process (Join-Path $ProjectRoot 'docs\TECHNICAL.md') }
     '7' { Start-Process (Join-Path $ProjectRoot 'docs\ROLLBACK.md') }
     '8' { Start-Process explorer.exe $ProjectRoot }
+    '9' { Run-Script 'tools\push-backup.ps1' }
     '0' { return }
     default { }
   }

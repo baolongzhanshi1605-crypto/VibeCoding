@@ -23,8 +23,8 @@
   只打印将要做什么。
 
 .EXAMPLE
-  pwsh -File install\uninstall.ps1
-  pwsh -File install\uninstall.ps1 -RemovePackage
+  powershell -File install\uninstall.ps1
+  powershell -File install\uninstall.ps1 -RemovePackage
 #>
 [CmdletBinding()]
 param(
