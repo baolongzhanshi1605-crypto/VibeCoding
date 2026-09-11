@@ -435,11 +435,15 @@ function dashboardBody(snap, load) {
   const info = (balance.infos || [])[0] || null
   const refreshSec = Math.round((data.refreshMs || 60000) / 1000)
 
-  // 分项合计：三档加起来就是本次进程的估算花费
+  // 分项合计：三档加起来就是本次进程的估算花费。
+  // 颜色用 **static** token（明暗主题同一色相），三档必须一眼可分：
+  // 曾用 brand-primary + state-business-primary，在用户主题里两者都偏黄、
+  // 在占比线上分不清 —— 现在改为 琥珀（未命中，最贵）/ 蓝（输出）/ 绿（命中，最便宜），
+  // 并加了第 2 节「三色互不相同」的自动守卫，防止以后手滑改回。
   const items = [
-    { label: '缓存未命中输入', value: usage.costCacheMiss || 0, color: 'var(--dsw-alias-brand-primary)' },
-    { label: '输出 tokens', value: usage.costOutput || 0, color: 'var(--dsw-alias-state-business-primary)' },
-    { label: '缓存命中输入', value: usage.costCacheHit || 0, color: 'var(--dsw-alias-state-success-primary)' },
+    { label: '缓存未命中输入', value: usage.costCacheMiss || 0, color: 'var(--dsw-static-amber-500)' },
+    { label: '输出 tokens', value: usage.costOutput || 0, color: 'var(--dsw-static-blue-500)' },
+    { label: '缓存命中输入', value: usage.costCacheHit || 0, color: 'var(--dsw-static-green-500)' },
   ]
   const costSum = Math.max(1e-12, items.reduce((sum, row) => sum + row.value, 0))
 

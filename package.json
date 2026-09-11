@@ -1,6 +1,6 @@
 {
   "name": "dsh-api-balance",
-  "version": "0.7.3",
+  "version": "0.7.4",
   "private": true,
   "description": "DSH 插件：实时显示 DeepSeek API 余额，并按缓存命中/未命中输入、输出、图片归因每一次调用的花费。",
   "type": "module",

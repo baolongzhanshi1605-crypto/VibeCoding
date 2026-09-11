@@ -72,7 +72,7 @@ powershell -File install\install.ps1 -DryRun
 
 ```powershell
 node tools/build.mjs                  # 唯一的构建步骤：合成「动态」「常驻」两个平面的产物
-node tools/verify-artifacts.mjs       # 不启动 DSH 的全量验证（38 项，含端到端持久化与文档同步）
+node tools/verify-artifacts.mjs       # 不启动 DSH 的全量验证（39 项，含端到端持久化与文档同步）
 node tools/probe-balance.mjs          # 不依赖 DSH 的余额自检（只从环境变量读密钥）
 ```
 
@@ -100,7 +100,7 @@ src/host.body.js     Host 半：余额抓取 + llm/stream 用量采集 + 计费 
 src/client.body.js   Client 半：胶囊 + 设置页仪表盘
 config/pricing.json  外部价格覆盖表（官方调价时改这里，不动代码）
 tools/build.mjs      ★ 唯一的构建点：把上面这些合成为两个平面的产物
-tools/verify-artifacts.mjs  ★ 38 项自动校验（含模拟重启、回填契约、文档同步）
+tools/verify-artifacts.mjs  ★ 39 项自动校验（含模拟重启、回填契约、文档同步）
 tools/desktop-admin.ps1     桌面管理菜单（也是应急入口）
 install/             常驻安装 / 卸载回滚 / 验证
 docs/                技术文档 + 回滚方案
@@ -130,7 +130,7 @@ dist/                构建产物（gitignore）
 | 样式 | ✅ 已修复并行为级验证（`<style>` 注入） |
 | 凭据解析 | ✅ 已修复并端到端验证（桌面端经 `launchEnvironment`） |
 | **累计跨重启保留** | ✅ 已修复并端到端验证（模拟重启后恢复成功） |
-| 自动校验 | ✅ 38 项全通过（`node tools/verify-artifacts.mjs`） |
+| 自动校验 | ✅ 39 项全通过（`node tools/verify-artifacts.mjs`） |
 | 桌面快捷方式 | ✅ 已创建 |
 | GitHub 异地备份 | ✅ 远程分支 `dsh-api-balance`（`tools\push-backup.ps1` 刷新） |
 | 计费口径 | ⚠️ 估算值（按官方标价 × 固定汇率，非账单实扣） |

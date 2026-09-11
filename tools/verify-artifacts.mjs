@@ -149,6 +149,17 @@ try {
         delete globalThis.document
       }
     }
+
+    // 视觉回归守卫：三档占比（未命中/输出/命中）必须用**互不相同**的 static 色，
+    // 且语义固定为 琥珀/蓝/绿。真实反馈：brand-primary 与 state-business-primary
+    // 在用户主题里都偏黄，占比线上分不清 —— 这里让「改回撞色」当场变红。
+    const barColors = [...source.matchAll(/color:\s*'var\((--dsw-static-[a-z0-9-]+)\)'/g)].map((m) => m[1])
+    const expectedBarColors = ['--dsw-static-amber-500', '--dsw-static-blue-500', '--dsw-static-green-500']
+    if (barColors.length === 3 && expectedBarColors.every((c, i) => barColors[i] === c)) {
+      ok('占比三档颜色互不相同且语义固定', barColors.join(' / '))
+    } else {
+      bad('占比颜色撞色或语义错位', `实际：${JSON.stringify(barColors)}，预期：${JSON.stringify(expectedBarColors)}`)
+    }
   }
 } catch (error) {
   bad('client bundle 加载失败', String(error.message))

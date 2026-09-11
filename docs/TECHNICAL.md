@@ -1,6 +1,6 @@
 # dsh-api-balance 技术文档
 
-> 版本：**v0.7.3** ｜ 最后更新：2026-09-11
+> 版本：**v0.7.4** ｜ 最后更新：2026-09-11
 > 子项目根：`E:\DSHarness_Project\repo-one\dsh-api-balance`
 > 回滚与防崩方案见 [`ROLLBACK.md`](./ROLLBACK.md)；治理边界见项目根 [`../NOTICE.md`](../NOTICE.md)。
 
@@ -256,6 +256,11 @@ DeepSeek 的视觉 token 由 provider 侧计算，DSH 把官方计算器移植�
 
 样式全部走 DSH 主题令牌（`--dsw-alias-label-*`、`--dsw-alias-bg-layer-*`、`--dsw-alias-border-*`、`--dsw-alias-state-*`、`--dsw-alias-brand-primary`），因此自动跟随明暗主题与皮肤，**不覆盖全局主题**、不碰产品 DOM 选择器。
 
+**唯一的例外是占比三档的颜色**（v0.7.4）：`--dsw-alias-brand-primary` 与 `--dsw-alias-state-business-primary`
+在用户实际主题里都偏黄，占比线上分不清。三档改为 **static 令牌**（明暗主题同一色相、任何皮肤都不变）：
+琥珀 `--dsw-static-amber-500`（未命中输入，最贵）、蓝 `--dsw-static-blue-500`（输出）、
+绿 `--dsw-static-green-500`（命中输入，最便宜）。语义被第 2 节验证固定住：改回撞色会当场 FAIL。
+
 > 关于「显示在哪里」的落点决策：**胶囊**负责「一眼看到余额」（常驻、极小、不打扰），**点开胶囊**负责「这个对话花了多少」（就地展开、不跳页），**设置页**负责「钱花在哪里」（空间充裕、维度齐全）。三者共用同一份 Host 快照，口径完全一致。
 
 ### 5.6 渲染加固：任何数据异常都降级，不炸界面
@@ -490,7 +495,7 @@ dsh-api-balance/
 ├── config/pricing.json          外部价格覆盖表（官方调价时改这里）
 ├── tools/
 │   ├── build.mjs                ★ 唯一构建步骤：合成两个平面的产物（并注入存储桥）
-│   ├── verify-artifacts.mjs     ★ 38 项自动校验（含模拟重启、回填契约、凭据链路、文档同步）
+│   ├── verify-artifacts.mjs     ★ 39 项自动校验（含模拟重启、回填契约、凭据链路、文档同步）
 │   ├── probe-balance.mjs        不依赖 DSH 的独立余额自检
 │   ├── push-backup.ps1          把本子项目单独备份到 GitHub（只推独立分支、不强推）
 │   ├── fix-ps1-bom.ps1          给所有 .ps1 补 UTF-8 BOM（5.1 会按 GBK 读，中文会乱）
@@ -569,7 +574,7 @@ dsh-api-balance/
 ```powershell
 # 常驻平面（当前主用）
 node tools\build.mjs
-node tools\verify-artifacts.mjs    # 38 项，含文档同步
+node tools\verify-artifacts.mjs    # 39 项，含文档同步
 powershell -File install\install.ps1
 # 完全退出并重启 DSH Desktop
 powershell -File install\verify.ps1
@@ -596,7 +601,7 @@ cordis_run    (mode:'run',     pluginId:'apibal-1', packageId:'<已知可用版>
 2. **缓存节省额**：把「因为命中缓存而省下的钱」算出来（`命中tokens × (未命中价 − 命中价)`）。以本机 50 倍的价差，这是最有冲击力的一个数字。
 3. **加一个模型工具**：`harness.registerTool` 注册 `dsh_api_balance`，让模型能在对话里直接回答「我花了多少钱」。
 4. **价格表过期提示**：把 `pricing.json` 的 `version` 与官方页对比，过期时在 UI 上提示。
-5. **单元测试**：`src/core/` 全是纯函数，补 `tools/pricing.test.mjs` 与 `tools/ledger.test.mjs` 即可获得真实覆盖率（现在的 38 项是集成级，不覆盖边界值）。
+5. **单元测试**：`src/core/` 全是纯函数，补 `tools/pricing.test.mjs` 与 `tools/ledger.test.mjs` 即可获得真实覆盖率（现在的 39 项是集成级，不覆盖边界值）。
 6. **改用官方 `@Remote`**：常驻平面可以放弃 HTTP 路由，改成 typert 生成的 Remote 命名空间，省掉一条端点（代价是引入装饰器与代码生成）。
 7. **账本压缩**：目前 `byDay` 与 `bySession` 各留 60 条、只存聚合；若长期运行可再加一层「按月归档」。
 
@@ -634,10 +639,11 @@ cordis_run    (mode:'run',     pluginId:'apibal-1', packageId:'<已知可用版>
 | 2026-09-11 | v0.7.1 | ① **回填改为自动**：v0.7.0 把它做成了按钮，但用户要的是「历史就在那儿」——现在首次运行（磁盘上没有 `backfilledAt` 标记）会自动从会话日志补齐，之后不再重复跑；手动按钮保留用于重新回填；② 回填增加**时间分界线守卫**：只回放「清空那一刻之前」的事件，彻底关掉「扫描期间新产生的调用被实时记账 + 又被日志回放」的重复计数窗口；③ **跳转逻辑更鲁棒**：页面上可能不止一个 dialog 触发器（实测 `triggers=2`），改为逐个尝试直到找到我们那一行；④ **新增胶囊命中测试诊断**：挂载后用 `elementFromPoint` 测胶囊中心实际命中哪个元素，并把 `styleTags / hasNone / triggers / centerHit` 回传宿主 —— 实测结果 `centerHit=BUTTON.dab-pill`，证明**点击热区其实已经修好了**，用户看到的「点了没反应」是跳转失败后被回落成刷新（刷新没有可见变化）。 |
 | 2026-09-11 | v0.7.2 | ① **回填改为「先收集、后清空」两阶段**：v0.7.1 先 `resetLedger()` 再扫描，一次「扫描到 0 条」就把用户已累计的数据清空了（真实发生并造成损失）。现在读不到任何带用量的记录就**原样返回、绝不碰账本**；② **回填失败时把探测到的真实结构报出来**（`sessionCount` / `sessionsWithoutId` / `listEventsFailed` / `firstSessionKeys` / `firstEventKeys`），把「为什么读不到」变成可读的事实而不是猜测；③ 会话 id 兼容 `id` / `sessionId` / `sessionID` 三种字段名（**方向错了，见 v0.7.3**）；④ 结果展示同步更新。<br>**当时的错误判断**：以为「`listSessions()` 返回空」。v0.7.3 拿到真实诊断后发现它**返回了 15 条**，真正的原因是 id 在 `header.id` 里、而事件流用错了 API。 |
 | 2026-09-11 | v0.7.3 | **回填真正跑通 —— 两个独立缺陷叠在一起**（详见 §5.12 的「两条弯路」）：① **会话 id 读错层级**：`listSessions()` 返回的记录形状是 `{ header, live, persisted }`，id 在 **`record.header.id`**，我却读 `record.id` —— 15 个会话**全部**判定为「缺 id」，一条日志都没进去读，而诊断只报「缺 id 15」不足以指向层级问题。现在读 `header.id` 并把 `firstHeaderKeys` 一并报出来；② **事件流用错了 API**：`listEvents(id)` 只返回轻量记录 `{ sessionId, seq, type, time, surface }`，**根本没有 `data` 字段**，`event.data.usage` 永远取不到 —— 就算 id 修对了也依然读不到用量。改用官方的 `readSession(id)`（返回**完整原始事件流**，含 `data.usage`；`readSurface` 作为后备），并新增探测字段 `firstEventKeys`；③ 字段名 `listEventsFailed` → `readEventsFailed`，`firstHeaderKeys` 新增，成功/失败两条展示同步更新；④ 源码注释补上 `sessionQuery` 三个方法的**真实契约**，避免第三次走同一条弯路；⑤ **坏章自愈**：v0.7.0/0.7.1 的事故版本在「读到 0 条」时也照样 reset + 盖章，留下的账本里 `backfilledAt === createdAt`（同一毫秒盖的两个章 —— 正常回填必须逐个 await 读会话，绝无可能同毫秒完成）。启动时认出这个指纹就清掉坏章、让自动回填重跑一次（两阶段守卫兜底，读不到任何东西仍一个字节都不改）；⑥ 第 7 节验证新增**两处契约守卫**：照抄上游真实返回形状（含「`listEvents` 没有 `data`」这个陷阱版本）跑端到端回填，以及「坏章 → 启动自愈 → 重建账本」的场景。 |
+| 2026-09-11 | v0.7.4 | **占比三档颜色分不清（用户反馈）**：未命中输入用的 `--dsw-alias-brand-primary` 与输出用的 `--dsw-alias-state-business-primary` 在用户主题里都偏黄，占比线上无法区分。改为**互不相同的 static 令牌**（明暗主题同一色相、不受皮肤影响）：琥珀 = 未命中输入（最贵）、蓝 = 输出、绿 = 命中输入（最便宜），并更新 §5.5；第 2 节验证新增**视觉回归守卫**：三色语义被固定（顺序、互异性），改回撞色当场 FAIL。 |
 
 ### 附录六：缺陷全景与守卫清单
 
-十次真实缺陷，**没有一次出在核心计费逻辑里**，全部集中在「构建 / 装配 / 服务时序 / 变量作用域 / 上游 API 契约」这一层。
+十一次真实缺陷，**没有一次出在核心计费逻辑里**，全部集中在「构建 / 装配 / 服务时序 / 变量作用域 / 上游 API 契约 / 视觉语义」这一层。
 比缺陷本身更重要的是：每一次都补齐了一条**自动校验**（或一个常驻诊断字段），而不是只改掉那一行。
 
 | # | 版本 | 缺陷 | 症状 | 守卫它的自动校验 |
@@ -652,6 +658,7 @@ cordis_run    (mode:'run',     pluginId:'apibal-1', packageId:'<已知可用版>
 | 8 | v0.6.0 | 账本只在定时器节拍落盘，`refresh` 路径不落盘 | 手动刷新后立刻被杀会丢最后几秒数据 | 第 6 节：端到端持久化（含「重启」模拟）**当场抓出** |
 | 9 | v0.7.1 | 回填**先清空再扫描**，且不检查是否扫到东西 | 一次「0 命中」把用户已累计的 41 次调用 / $0.3806 **清空**（真实损失），还留下 `backfilledAt === createdAt` 的**坏章**挡住自动回填 | v0.7.2 改为「先收集、后清空」，读不到就一个字节都不改；v0.7.3 启动时认出坏章指纹并自愈重跑（第 7 节有端到端场景守卫） |
 | 10 | v0.7.0 → v0.7.3 | **上游服务契约读错两处**：id 读 `record.id`（实际在 `record.header.id`）；事件流用 `listEvents`（返回的轻量记录**没有 `data`**） | 15 个会话全部「缺 id」→ 回填永远 0 命中，且报错信息不指向真因 | 常驻诊断字段 `firstSessionKeys` / `firstHeaderKeys` / `firstEventKeys` + 源码注释写清三个方法的真实契约 |
+| 11 | v0.7.4 | 占比三档颜色用了两个**都会随主题变黄**的 alias 令牌（brand-primary / state-business-primary） | 未命中输入与输出在占比线上分不清（用户反馈） | 第 2 节：三色必须互不相同、语义固定为 琥珀/蓝/绿 |
 
 > 第 8 条特别值得记：它**不是**事后补的校验，而是我先写了「模拟重启」的测试、
 > 测试立刻变红、我才发现漏了落盘路径。这就是「先写守卫再交付」的价值。
