@@ -12,7 +12,7 @@ $pidValue = (Get-Content -LiteralPath $pidPath -Raw).Trim()
 if ($pidValue -match '^\d+$') {
     $process = Get-Process -Id ([int]$pidValue) -ErrorAction SilentlyContinue
     if ($process) {
-        Stop-Process -Id ([int]$pidValue)
+        & taskkill.exe /PID $pidValue /T /F | Out-Null
         $process.WaitForExit(5000)
         Write-Output "dashboard stopped pid=$pidValue"
     }

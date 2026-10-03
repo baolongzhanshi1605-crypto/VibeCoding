@@ -21,6 +21,99 @@ class BudgetPlanner:
         self.weekly_reserve_percent = weekly_reserve_percent
         self.per_task_cap_percent = per_task_cap_percent
 
+    def plan_tokens(
+        self, tasks: list[TaskSnapshot], windows: list[QuotaWindow],
+        preferences: dict[str, dict[str, Any]], burn_rates: dict[str, float],
+        used_tokens: dict[str, int], estimates: dict[str, dict[str, Any]],
+        *, window: QuotaWindow | None, now: int, unreported_tokens: int = 0,
+        weekly_window: QuotaWindow | None = None,
+    ) -> dict[str, Any]:
+        candidates = [task for task in tasks if task.status in {"running", "waiting"}]
+        short = next((item for item in windows if item.kind == "short"), None)
+        weekly = next((item for item in windows if item.kind == "weekly"), None)
+        short_ratio = estimates.get("short", {}).get("tokens_per_percent")
+        weekly_ratio = estimates.get("weekly", {}).get("tokens_per_percent")
+        ratios = {"short": short_ratio, "weekly": weekly_ratio}
+        for kind, ratio in ratios.items():
+            ratios[kind] = float(ratio) if ratio and math.isfinite(float(ratio)) and ratio > 0 else None
+        short_ratio, weekly_ratio = ratios["short"], ratios["weekly"]
+        resets_at = window.resets_at if window else None
+        valid_period = bool(resets_at and resets_at > now)
+        available: int | None = None
+        state = "awaiting_quota" if window else "unavailable"
+        weekly_pending = weekly_window is not None and weekly_window not in windows
+        if short and valid_period and not weekly_pending:
+            short_points = max(0.0, short.remaining_percent - self.short_reserve_percent)
+            weekly_points = max(0.0, weekly.remaining_percent - self.weekly_reserve_percent) if weekly else None
+            if short_points == 0 or weekly_points == 0:
+                available, state = 0, "ready"
+            elif short_ratio and (not weekly or weekly_ratio):
+                pools = [short_points * short_ratio]
+                if weekly:
+                    slots = max(1, math.ceil(max(0, (weekly.resets_at or now) - now) / 18000))
+                    pools.append(weekly_points * weekly_ratio / slots)
+                available = max(0, math.floor(min(pools) - max(0, unreported_tokens)))
+                state = "ready"
+            else:
+                state = "calibrating"
+
+        rates = {task.id: float(burn_rates.get(task.id) or 0) for task in candidates}
+        rates = {key: rate if math.isfinite(rate) and rate > 0 else 0 for key, rate in rates.items()}
+        known = sorted(rate for rate in rates.values() if rate > 0)
+        baseline = known[len(known) // 2] if known else 0
+        scores = {
+            task.id: int(preferences.get(task.id, {}).get("priority", DEFAULT_PRIORITY)) /
+            (math.sqrt(max(0.25, rates[task.id] / baseline)) if baseline and rates[task.id] else 1)
+            for task in candidates
+        }
+        cap = short_ratio * self.per_task_cap_percent if short_ratio else 0
+        manual = {
+            task.id: min(cap, max(0, float(preferences[task.id]["manual_cap_percent"])) * short_ratio)
+            for task in candidates
+            if short_ratio and preferences.get(task.id, {}).get("manual_cap_percent") is not None
+        }
+        total_manual = sum(manual.values())
+        scale = min(1, available / total_manual) if available is not None and total_manual else 1
+        shares = {key: value * scale for key, value in manual.items()}
+        remaining = max(0, (available or 0) - sum(shares.values()))
+        score_total = sum(value for key, value in scores.items() if key not in manual) or 1
+        allocations: dict[str, dict[str, Any]] = {}
+        for task in candidates:
+            value = math.floor(shares.get(task.id, min(cap, remaining * scores[task.id] / score_total))) if available is not None else None
+            used = used_tokens.get(task.id) if valid_period else None
+            rate = rates[task.id]
+            seconds = None
+            forecast = state
+            if value is not None:
+                if value == 0:
+                    forecast, seconds = "exhausted", 0
+                elif task.status == "waiting":
+                    forecast = "waiting"
+                elif rate == 0:
+                    forecast = "unknown_rate"
+                else:
+                    projected = math.ceil(value / rate * 60)
+                    if now + projected >= resets_at:
+                        forecast = "after_reset"
+                    else:
+                        forecast, seconds = "exhausts", projected
+            allocations[task.id] = {
+                "window_used_tokens": used, "remaining_tokens": value,
+                "suggested_total_tokens": used + value if used is not None and value is not None else None,
+                "burn_rate_tokens_per_minute": round(rate, 1) if rate else None,
+                "forecast": forecast, "seconds_remaining": seconds,
+                "exhausts_at": now + seconds if seconds is not None else None,
+                "mode": "manual_adjusted" if task.id in manual and scale < 1 else "manual" if task.id in manual else "automatic",
+            }
+        return {
+            "state": state, "is_estimate": True, "advisory_only": True,
+            "source": "local-quota-token-calibration", "active_tasks": len(candidates),
+            "started_at": resets_at - window.window_minutes * 60 if valid_period else None,
+            "resets_at": resets_at, "available_tokens": available,
+            "unreported_tokens": max(0, unreported_tokens),
+            "calibrations": estimates, "allocations": allocations,
+        }
+
     def plan(
         self,
         tasks: list[TaskSnapshot],

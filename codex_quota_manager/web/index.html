@@ -1,17 +1,17 @@
 <!doctype html>
-<html lang="zh-CN">
+<html lang="zh-CN" data-theme="dark">
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-    <meta name="theme-color" content="#f7f8fc">
+    <meta name="theme-color" content="#101214">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="default">
     <meta name="apple-mobile-web-app-title" content="Codex Token">
     <title>Codex Token 用量监控</title>
     <link rel="icon" href="/favicon.svg" type="image/svg+xml">
     <link rel="manifest" href="/manifest.webmanifest">
-    <link rel="stylesheet" href="/styles.css?v=20260713-5">
-    <script src="/app.js?v=20260713-5" defer></script>
+    <link rel="stylesheet" href="/styles.css?v=20260729-1">
+    <script src="/app.js?v=20260729-1" defer></script>
   </head>
   <body>
     <header class="appbar">
@@ -20,6 +20,10 @@
         <h1>Codex Token 用量监控</h1>
       </div>
       <div class="header-tools">
+        <div class="theme-control" aria-label="界面主题">
+          <button type="button" data-theme-value="light">日间</button>
+          <button type="button" data-theme-value="dark">夜间</button>
+        </div>
         <div class="page-actions">
           <button id="export-button" type="button">导出快照</button>
           <button id="all-tasks-button" type="button" class="primary-action">全部任务 <span id="task-total">0</span></button>
@@ -36,21 +40,21 @@
 
     <main>
       <section class="overview-grid" aria-label="实时概览">
-        <article class="quota-card" id="short-window">
+        <article class="quota-card usage-streak-card" id="usage-streak-card">
           <header>
             <div>
-              <span class="metric-label">短周期额度</span>
-              <strong id="short-window-name">5 小时窗口</strong>
+              <span class="metric-label">连续使用</span>
+              <strong>自然日记录</strong>
             </div>
-            <span class="source-badge">动态</span>
+            <span class="source-badge" id="usage-streak-source">本地日志</span>
           </header>
-          <div class="quota-content">
-            <div class="gauge" id="short-gauge" role="img" aria-label="短周期剩余额度">
-              <div><strong id="short-remaining">--</strong><span>% 剩余</span></div>
+          <div class="usage-streak-content">
+            <div class="usage-streak-primary" role="status" aria-label="连续使用天数">
+              <strong id="usage-streak-days">0</strong><span>连续天</span>
             </div>
             <dl>
-              <div><dt>已使用</dt><dd id="short-used">--</dd></div>
-              <div><dt>距离刷新</dt><dd id="short-reset">--</dd></div>
+              <div><dt>连续总用量</dt><dd id="usage-streak-total">0</dd></div>
+              <div><dt>今日用量</dt><dd id="usage-streak-today">0</dd></div>
             </dl>
           </div>
         </article>
@@ -61,11 +65,11 @@
               <span class="metric-label">周额度</span>
               <strong id="weekly-window-name">7 天窗口</strong>
             </div>
-            <span class="source-badge">账户</span>
+            <span class="source-badge" id="weekly-source">等待上报</span>
           </header>
           <div class="quota-content">
             <div class="gauge gauge-weekly" id="weekly-gauge" role="img" aria-label="周剩余额度">
-              <div><strong id="weekly-remaining">--</strong><span>% 剩余</span></div>
+              <div><strong id="weekly-remaining">--</strong><span id="weekly-remaining-label">% 剩余</span></div>
             </div>
             <dl>
               <div><dt>已使用</dt><dd id="weekly-used">--</dd></div>
@@ -83,11 +87,11 @@
           </header>
           <div class="telemetry-grid">
             <div><span>运行任务</span><strong id="active-count">0</strong></div>
-            <div><span>活动累计</span><strong id="running-tokens">--</strong></div>
-            <div><span>本次合计</span><strong id="turn-tokens">--</strong></div>
+            <div><span>当前任务累计</span><strong id="running-tokens">--</strong></div>
+            <div><span>本轮消耗合计</span><strong id="turn-tokens">--</strong></div>
             <div><span>今日花费</span><strong id="daily-tokens">--</strong></div>
             <div><span>消耗速度</span><strong id="burn-rate">--</strong></div>
-            <div><span>当前安全预算</span><strong id="available-budget">--</strong></div>
+            <div><span>本地预算估算</span><strong id="available-budget">--</strong></div>
           </div>
         </article>
 
@@ -108,7 +112,16 @@
               </div>
             </div>
           </header>
-          <canvas id="quota-chart" aria-label="额度变化趋势"></canvas>
+          <div class="chart-plot" id="quota-chart-plot">
+            <canvas id="quota-chart" tabindex="0" aria-label="额度变化趋势，可移动指针查看历史数值"></canvas>
+            <div class="chart-tooltip" id="quota-chart-tooltip" role="status" hidden>
+              <strong id="chart-tooltip-time">--</strong>
+              <div id="chart-tooltip-short"><span><i class="legend-short"></i>短周期</span><b id="chart-tooltip-short-value">--</b></div>
+              <div id="chart-tooltip-weekly"><span><i class="legend-weekly"></i>周额度</span><b id="chart-tooltip-weekly-value">--</b></div>
+              <div id="chart-tooltip-daily"><span>今日 Token</span><b id="chart-tooltip-daily-value">--</b></div>
+              <div id="chart-tooltip-weekly-tokens"><span>本周 Token</span><b id="chart-tooltip-weekly-tokens-value">--</b></div>
+            </div>
+          </div>
           <div class="chart-axis"><span id="chart-range-start">6 小时前</span><span>现在</span></div>
         </article>
       </section>
@@ -122,7 +135,7 @@
           <button id="recent-all-button" type="button" class="text-action">查看全部</button>
         </header>
         <div class="task-columns" aria-hidden="true">
-          <span>任务</span><span>累计 / 本次</span><span>建议上限（仅提醒）</span><span>优先级</span>
+          <span>任务</span><span>任务累计 / 本轮消耗</span><span>五小时预算（估算）</span><span>优先级</span>
         </div>
         <div id="task-list" class="task-list" aria-live="polite"></div>
         <div id="empty-state" class="empty-state" hidden>
@@ -191,7 +204,7 @@
           <span id="filtered-task-count">0 个任务</span>
         </div>
         <div class="all-task-columns" aria-hidden="true">
-          <span>任务</span><span>状态</span><span>累计 Token</span><span>本次 Token</span><span>最近更新</span>
+          <span>任务</span><span>状态</span><span>任务累计</span><span>本轮消耗</span><span>最近更新</span>
         </div>
         <div id="all-task-list" class="all-task-list"></div>
       </div>

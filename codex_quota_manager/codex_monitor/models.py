@@ -4,6 +4,9 @@ from dataclasses import asdict, dataclass, field
 from typing import Any
 
 
+QUOTA_REPORT_GRACE_SECONDS = 30
+
+
 @dataclass(frozen=True)
 class TokenUsage:
     input_tokens: int = 0
@@ -44,10 +47,33 @@ class QuotaWindow:
             return "weekly"
         return "custom"
 
-    def to_dict(self) -> dict[str, Any]:
+    def age_seconds(self, now: int) -> int:
+        return max(0, int(now) - int(self.observed_at))
+
+    def freshness(self, now: int, latest_token_count_at: int | None = None) -> str:
+        if self.resets_at and int(now) >= int(self.resets_at):
+            return "expired"
+        if (
+            latest_token_count_at
+            and int(latest_token_count_at) > int(self.observed_at)
+            and self.age_seconds(now) > QUOTA_REPORT_GRACE_SECONDS
+        ):
+            return "awaiting_report"
+        return "current"
+
+    def is_stale(self, now: int, latest_token_count_at: int | None = None) -> bool:
+        return self.freshness(now, latest_token_count_at) != "current"
+
+    def to_dict(self, now: int | None = None, latest_token_count_at: int | None = None) -> dict[str, Any]:
         value = asdict(self)
         value["remaining_percent"] = round(self.remaining_percent, 2)
         value["kind"] = self.kind
+        if now is not None:
+            age_seconds = self.age_seconds(now)
+            freshness = self.freshness(now, latest_token_count_at)
+            value["age_seconds"] = age_seconds
+            value["is_stale"] = freshness != "current"
+            value["freshness"] = freshness
         return value
 
 
@@ -87,6 +113,8 @@ class MonitorSnapshot:
     tasks: list[TaskSnapshot]
     quota_windows: list[QuotaWindow]
     warnings: list[str] = field(default_factory=list)
+    codex_home: str | None = None
+    latest_token_count_at: int | None = None
 
     def to_dict(self) -> dict[str, Any]:
         active = sum(task.status in {"running", "waiting"} for task in self.tasks)
@@ -94,13 +122,17 @@ class MonitorSnapshot:
         return {
             "generated_at": self.generated_at,
             "source": self.source,
+            "codex_home": self.codex_home,
+            "latest_token_count_at": self.latest_token_count_at,
             "health": self.health,
             "summary": {
                 "active_tasks": active,
                 "waiting_tasks": waiting,
                 "visible_tasks": len(self.tasks),
             },
-            "quota_windows": [window.to_dict() for window in self.quota_windows],
+            "quota_windows": [
+                window.to_dict(self.generated_at, self.latest_token_count_at) for window in self.quota_windows
+            ],
             "tasks": [task.to_dict() for task in self.tasks],
             "warnings": self.warnings,
         }

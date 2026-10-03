@@ -1,3 +1,8 @@
+param(
+    [ValidateRange(1, 65535)]
+    [int]$Port = 8790
+)
+
 $ErrorActionPreference = "Stop"
 
 $projectDir = Split-Path -Parent $MyInvocation.MyCommand.Path
@@ -6,7 +11,6 @@ $pidPath = Join-Path $runtimeDir "dashboard.pid"
 $outPath = Join-Path $runtimeDir "dashboard.out.log"
 $errPath = Join-Path $runtimeDir "dashboard.err.log"
 $appPath = Join-Path $projectDir "app.py"
-$port = 8790
 
 New-Item -ItemType Directory -Force -Path $runtimeDir | Out-Null
 
@@ -20,9 +24,15 @@ if (Test-Path -LiteralPath $pidPath) {
     Remove-Item -LiteralPath $pidPath -ErrorAction SilentlyContinue
 }
 
-$listener = Get-NetTCPConnection -LocalPort $port -State Listen -ErrorAction SilentlyContinue
-if ($listener) {
-    throw "TCP port $port is already in use by process $($listener[0].OwningProcess)"
+$portProbe = New-Object System.Net.Sockets.TcpClient
+try {
+    $connectTask = $portProbe.ConnectAsync("127.0.0.1", $port)
+    try { $null = $connectTask.Wait(500) } catch { }
+    if ($portProbe.Connected) {
+        throw "TCP port $port is already in use"
+    }
+} finally {
+    $portProbe.Dispose()
 }
 
 $pythonLauncher = Get-Command py -ErrorAction SilentlyContinue
@@ -58,10 +68,17 @@ if (-not $ready) {
     throw "dashboard did not become ready. $details"
 }
 
-$lanAddress = Get-NetIPAddress -AddressFamily IPv4 -AddressState Preferred -ErrorAction SilentlyContinue |
-    Where-Object { $_.IPAddress -notlike '127.*' -and $_.IPAddress -notlike '169.254.*' } |
-    Sort-Object InterfaceMetric |
-    ForEach-Object { $_.IPAddress } |
+$lanAddress = [System.Net.NetworkInformation.NetworkInterface]::GetAllNetworkInterfaces() |
+    Where-Object {
+        $_.OperationalStatus -eq 'Up' -and
+        $_.NetworkInterfaceType -in @('Ethernet', 'Wireless80211') -and
+        ($_.GetIPProperties().GatewayAddresses | Where-Object {
+            $_.Address.AddressFamily -eq 'InterNetwork' -and $_.Address.ToString() -ne '0.0.0.0'
+        })
+    } |
+    ForEach-Object { $_.GetIPProperties().UnicastAddresses } |
+    Where-Object { $_.Address.AddressFamily -eq 'InterNetwork' -and $_.Address.ToString() -notlike '127.*' -and $_.Address.ToString() -notlike '169.254.*' } |
+    ForEach-Object { $_.Address.ToString() } |
     Select-Object -First 1
 
 Write-Output "dashboard started pid=$($process.Id)"

@@ -8,6 +8,7 @@ import sys
 import time
 import urllib.request
 from ctypes import wintypes
+from http.client import HTTPException
 from pathlib import Path
 
 
@@ -21,6 +22,7 @@ STOP_DASHBOARD = PROJECT_ROOT / "stop_dashboard.ps1"
 WIDGET_PATH = PROJECT_ROOT / "desktop_widget.py"
 HEALTH_URL = "http://127.0.0.1:8790/health"
 CREATE_NO_WINDOW = 0x08000000
+LOCAL_HTTP = urllib.request.build_opener(urllib.request.ProxyHandler({}))
 TH32CS_SNAPPROCESS = 0x00000002
 INVALID_HANDLE_VALUE = ctypes.c_void_p(-1).value
 KERNEL32 = ctypes.WinDLL("kernel32", use_last_error=True)
@@ -56,12 +58,15 @@ class PROCESSENTRY32W(ctypes.Structure):
 def process_entries() -> list[tuple[str, int, int]]:
     snapshot = KERNEL32.CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0)
     if snapshot == INVALID_HANDLE_VALUE:
-        return []
+        raise ctypes.WinError(ctypes.get_last_error())
     entries: list[tuple[str, int, int]] = []
     item = PROCESSENTRY32W()
     item.dwSize = ctypes.sizeof(PROCESSENTRY32W)
     try:
         if not KERNEL32.Process32FirstW(snapshot, ctypes.byref(item)):
+            error = ctypes.get_last_error()
+            if error != 18:  # ERROR_NO_MORE_FILES
+                raise ctypes.WinError(error)
             return entries
         while True:
             entries.append((item.szExeFile.lower(), int(item.th32ProcessID), int(item.th32ParentProcessID)))
@@ -72,12 +77,17 @@ def process_entries() -> list[tuple[str, int, int]]:
     return entries
 
 
-def is_codex_desktop_tree(entries: list[tuple[str, int, int]]) -> bool:
+def codex_desktop_pids(entries: list[tuple[str, int, int]]) -> set[int]:
     names_by_pid = {pid: name for name, pid, _parent in entries}
-    return any(
-        name == "codex.exe" and names_by_pid.get(parent_pid) == "chatgpt.exe"
+    return {
+        parent_pid
         for name, _pid, parent_pid in entries
-    )
+        if name == "codex.exe" and names_by_pid.get(parent_pid) == "chatgpt.exe"
+    }
+
+
+def is_codex_desktop_tree(entries: list[tuple[str, int, int]]) -> bool:
+    return bool(codex_desktop_pids(entries))
 
 
 def codex_desktop_running() -> bool:
@@ -114,13 +124,13 @@ def terminate_pid(path: Path) -> None:
 
 def dashboard_running() -> bool:
     try:
-        with urllib.request.urlopen(HEALTH_URL, timeout=0.8) as response:
+        with LOCAL_HTTP.open(HEALTH_URL, timeout=2) as response:
             return response.status == 200
-    except OSError:
+    except (OSError, HTTPException):
         return False
 
 
-def run_script(path: Path, timeout: int = 30) -> None:
+def run_script(path: Path, timeout: int = 60) -> None:
     subprocess.run(
         [
             "powershell.exe",
@@ -135,7 +145,7 @@ def run_script(path: Path, timeout: int = 30) -> None:
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
         timeout=timeout,
-        check=False,
+        check=True,
     )
 
 
@@ -153,15 +163,16 @@ def ensure_dashboard() -> None:
 
 
 def ensure_widget() -> None:
-    if WIDGET_DISMISSED_PATH.exists() or read_pid(WIDGET_PID_PATH):
+    if read_pid(WIDGET_PID_PATH):
         return
     logging.info("starting desktop widget")
-    subprocess.Popen(
+    process = subprocess.Popen(
         [str(pythonw_executable()), str(WIDGET_PATH)],
         cwd=PROJECT_ROOT,
         creationflags=CREATE_NO_WINDOW,
         close_fds=True,
     )
+    WIDGET_PID_PATH.write_text(str(process.pid), encoding="ascii")
 
 
 def stop_monitoring() -> None:
@@ -181,27 +192,65 @@ def configure_logging() -> None:
     )
 
 
+class CodexExitGuard:
+    def __init__(self, grace_seconds: float = 5) -> None:
+        self.grace_seconds = grace_seconds
+        self.missing_since: float | None = None
+
+    def should_exit(self, active: bool | None, now: float) -> bool:
+        if active is not False:
+            self.missing_since = None
+            return False
+        if self.missing_since is None:
+            self.missing_since = now
+        return now - self.missing_since >= self.grace_seconds
+
+
+class LifecycleController:
+    def __init__(self) -> None:
+        self.exit_guard = CodexExitGuard()
+        self.previous: bool | None = None
+        self.next_health_check = 0.0
+        self.cleanup_complete = False
+
+    def tick(self) -> None:
+        try:
+            now = time.monotonic()
+            try:
+                active = codex_desktop_running()
+            except OSError:
+                self.exit_guard.should_exit(None, now)
+                raise
+            exit_due = self.exit_guard.should_exit(active, now)
+            if active != self.previous:
+                logging.info("Codex desktop active=%s", active)
+                if active:
+                    self.next_health_check = now
+                self.previous = active
+            if active:
+                self.cleanup_complete = False
+                if now >= self.next_health_check:
+                    self.next_health_check = now + 5
+                    ensure_dashboard()
+                    if dashboard_running():
+                        ensure_widget()
+            elif exit_due and not self.cleanup_complete and now >= self.next_health_check:
+                self.next_health_check = now + 5
+                stop_monitoring()
+                self.cleanup_complete = True
+        except Exception:
+            logging.exception("lifecycle operation failed; retrying on the next check")
+
+
 def main() -> int:
     configure_logging()
     RUNTIME_ROOT.mkdir(parents=True, exist_ok=True)
     LINK_PID_PATH.write_text(str(os.getpid()), encoding="ascii")
-    previous: bool | None = None
-    last_health_check = 0.0
+    controller = LifecycleController()
     logging.info("Codex lifecycle link started")
     try:
         while True:
-            active = codex_desktop_running()
-            now = time.monotonic()
-            if active and (previous is not True or now - last_health_check >= 5):
-                ensure_dashboard()
-                if dashboard_running():
-                    ensure_widget()
-                last_health_check = now
-            elif not active and previous is not False:
-                stop_monitoring()
-            if active != previous:
-                logging.info("Codex desktop active=%s", active)
-            previous = active
+            controller.tick()
             time.sleep(1)
     except KeyboardInterrupt:
         return 0
