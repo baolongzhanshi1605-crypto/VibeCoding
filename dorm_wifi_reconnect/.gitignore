@@ -1,0 +1,8 @@
+bin/
+obj/
+dist/
+dist-boot/
+.dotnet/
+runtime/
+test-output/
+*.user
